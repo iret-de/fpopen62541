@@ -1,6 +1,13 @@
+
+#ifdef __GNUC__
 #include <open62541/plugin/log.h>
 #include <open62541/types.h>
 //gcc -fPIC -I /home/luca/Datos/open62541/open62541-linux64/include/ -shared -o libua_pascallog.so pascallog.c
+#else
+#include <malloc.h>
+#include <stdio.h>
+#include "pascallog_log.h"
+#endif
 
 #if defined(_WIN32)
 #  ifdef __GNUC__
@@ -40,7 +47,7 @@ UA_Log_Pascal_log(void *context, UA_LogLevel level, UA_LogCategory category,
                   const char *msg, va_list args) {
         char logbuf[LOGBUFSIZE];
         if (context != NULL) {
-            PascalLogTrampoline *trampoline = context;
+            PascalLogTrampoline* trampoline = (PascalLogTrampoline*)context;
             vsnprintf(logbuf, LOGBUFSIZE, msg, args);
             trampoline->func(trampoline->context, level, category, logbuf);
         }
@@ -56,7 +63,7 @@ Initializes a logger that stores the callback function and the original
 context in a struct, then uses UA_Log_Pascal_log to dispatch the messages
 */
 SYM_EXPORT UA_Logger UA_Pascal_logger(void *context, pascal_log_t func) {
-        PascalLogTrampoline *trampoline=malloc(sizeof(PascalLogTrampoline));
+        PascalLogTrampoline* trampoline = (PascalLogTrampoline*)malloc(sizeof(PascalLogTrampoline));
         trampoline->context = context;
         trampoline->func = func;
         UA_Logger logger = {UA_Log_Pascal_log, (void *)trampoline, UA_Log_Pascal_clear};
