@@ -101,7 +101,7 @@ var
 implementation
 
 uses
-  StrUtils;
+  StrUtils, open62541_helpers;
 
 {$R *.lfm}
 
@@ -285,7 +285,7 @@ begin
   Result := aStatus = UA_STATUSCODE_GOOD;
   if Result
     then LogDetail(aNodeId, aMessage)
-    else LogError(aNodeID, 'Result=' + IntToHex (aStatus) + ': ' + aMessage);
+    else LogError(aNodeID,  UA_Explain_StatusCode(aStatus) + #13+#10+'   Message : ' + aMessage);
 end;
 
 //! Ensures that folder 'folder' exists
