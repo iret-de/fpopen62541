@@ -536,6 +536,7 @@ type
        overlayable : 0..1;              (* The type has the identical memory layout
                                          * in memory and on the binary stream. *)
        membersSize : UA_Byte;           (* How many members does the type have? *)
+       padding     : UA_UInt16;         (* 16 unused bite before 'members' just like the struct in C. *)
        members: ^UA_DataTypeMember;
      {$ifdef UA_ENABLE_TYPEDESCRIPTION}
        typeName: PAnsiChar;

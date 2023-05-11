@@ -257,6 +257,7 @@ const
     pointerFree: 0;
     overlayable: 0;
     membersSize: 3;
+    padding:     0;
     {!!! works only if binaryEncodingId==identifier.numeric !!!}
     members: @MyStructMembers;
     typeName: 'MyStructType';
