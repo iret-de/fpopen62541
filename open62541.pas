@@ -1944,11 +1944,17 @@ begin
 end;
 
 function UA_DataTypeToStr(typeId: UA_NodeId): AnsiString;
+{$ifdef UA_ENABLE_TYPEDESCRIPTION}
 var pDataType: PUA_DataType;
 begin
   pDataType := UA_findDataType(@typeId);
   if pDataType = nil then Result:='Unknown' else Result:=pDataType^.typeName;
 end;
+{$else}
+begin
+  Result:='UA_ENABLE_TYPEDESCRIPTION disabled';
+end;
+{$endif}
 
 procedure UA_Variant_init(out p: UA_Variant);
 begin
