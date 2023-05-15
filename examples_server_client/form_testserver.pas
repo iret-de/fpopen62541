@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, Buttons,
-  open62541,
+  open62541, open62541_utils,
   open62541_testserver, rec_test_const;
 
 type
@@ -123,6 +123,11 @@ begin
   end;
 end;
 
+procedure UALog(logContext: Pointer; level: UA_LogLevel; category: UA_LogCategory; msg: PAnsiChar);cdecl;
+begin
+  Form1.Memo1.Lines.Add ('-UALog: '+PChar(msg));
+end;
+
 procedure TForm1.StartStopServer;
 begin
   if Assigned(FServer)
@@ -134,6 +139,7 @@ begin
   end else
   begin
     FServer := TOpen62541ServerThread.create(self);
+    FServer.AttachLogger(@UALog);
     btStart.Checked := True;
     btStart.Caption := 'Stop server';
   end;
