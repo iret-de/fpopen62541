@@ -343,9 +343,11 @@ begin
   if CheckStatuscode (FStatusCode, 'UA_Client_readValueAttribute')
     then Result := GetUA_VariantAsString (value)
     else ; //NodeId := UA_NODEID_STRING_ALLOC(1, aName);
-
+  {$IFDEF UA_VER1_3}
   Memo1.Lines.Append(Format('Node "%s" read value: %s (Size=%d, Type=%s (typeId=%s,typeIndex=%d); Result=%x)', [IntToStr (aID), Result, value._type^.memSize, value._type^.typeName, UA_NodeIdToStr(value._type^.typeId), value._type^.typeIndex, FStatusCode]));
-
+  {$ELSE}
+  Memo1.Lines.Append(Format('Node "%s" read value: %s (Size=%d, Type=%s (typeId=%s); Result=%x)', [IntToStr (aID), Result, value._type^.memSize, value._type^.typeName, UA_NodeIdToStr(value._type^.typeId), FStatusCode]));
+  {$ENDIF}
   UA_NodeId_clear(nodeId);
 
 end;
