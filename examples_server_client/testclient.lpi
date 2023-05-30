@@ -83,6 +83,13 @@
         </Win32>
       </Options>
     </Linking>
+    <Other>
+      <CustomOptions Value="-dUA_VER1_2"/>
+      <OtherDefines Count="2">
+        <Define0 Value="UA_VER1_2"/>
+        <Define1 Value="UA_VER1_3"/>
+      </OtherDefines>
+    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions>
