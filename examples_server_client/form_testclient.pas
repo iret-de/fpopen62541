@@ -21,13 +21,17 @@ type
     btSetVar1: TButton;
     btSubscribeVar1: TButton;
     btTestBrowse: TButton;
+    btTestConection: TButton;
     btTestTranslate: TButton;
     Button1: TButton;
     cbServer: TComboBox;
+    Edit1: TEdit;
+    edNameSpace: TEdit;
     edPath: TEdit;
     edVar1: TEdit;
     edVar2: TEdit;
     Label1: TLabel;
+    lbNameSpace: TLabel;
     lbSearchPath: TLabel;
     lbValueVar2: TLabel;
     Memo1: TMemo;
@@ -47,11 +51,10 @@ type
     procedure btSetVar1Click(Sender: TObject);
     procedure btSubscribeVar1Click(Sender: TObject);
     procedure btTestBrowseClick(Sender: TObject);
+    procedure btTestConectionClick(Sender: TObject);
     procedure btTestTranslateClick(Sender: TObject);
-    procedure Button1Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
-    procedure PageControl1Change(Sender: TObject);
     procedure TimerClientIterateStartTimer(Sender: TObject);
     procedure TimerClientIterateTimer(Sender: TObject);
   private
@@ -233,16 +236,29 @@ begin
   browseServerRecursive (0, UA_NS0ID_OBJECTSFOLDER);
 end;
 
+procedure TForm1.btTestConectionClick(Sender: TObject);
+var
+  lPath : string;
+  lNodeId: UA_NodeId;
+  lDisplayName: UA_LocalizedText;
+  lStatus: UA_StatusCode;
+begin
+  lPath := edPath.Text;
+
+  lNodeId := UA_NODEID_STRING_ALLOC(StrToInt(edNameSpace.Text), lPath);
+
+  Memo1.Lines.Add('Looking up Node:');
+  Memo1.Lines.Add('Node: ' + UA_NodeIdToStr(lNodeId));
+
+  lStatus := UA_Client_readDisplayNameAttribute(FClient, lNodeId, lDisplayName);
+
+  if CheckStatuscode(lStatus, 'Checked NodeDisplayName')
+  then Memo1.Lines.Add('Displayname of Node: ' + UA_StringToStr(lDisplayName.text));
+end;
+
 procedure TForm1.btTestTranslateClick(Sender: TObject);
 begin
   translateBrowsePathsToNodeIdsRequest();
-end;
-
-
-
-procedure TForm1.Button1Click(Sender: TObject);
-begin
-
 end;
 
 procedure TForm1.FormCreate(Sender: TObject);
@@ -254,11 +270,6 @@ end;
 procedure TForm1.FormDestroy(Sender: TObject);
 begin
   btDisconnectClick(nil);
-end;
-
-procedure TForm1.PageControl1Change(Sender: TObject);
-begin
-
 end;
 
 procedure TForm1.TimerClientIterateStartTimer(Sender: TObject);
@@ -470,8 +481,8 @@ procedure TForm1.browseServerRecursive (aNameSpace, aNodeID : integer);
 begin
   if not CheckClient then exit;
 
-  Memo1.Lines.Add( Format ('%11-s %-9s %-6s %-28s %-7s %-13s',
-                   ['Tree', 'NAMESPACE', 'NODEID', 'DISPLAY NAME', 'idFier', 'node_class']) );
+  Memo1.Lines.Add( Format ('%11-s %-28s %-3s %-6s %-7s %-13s',
+                   ['Tree', 'DISPLAY NAME', 'NS', 'NODEID', 'idFier', 'node_class']) );
   browseServerRecursiveHelp(UA_NODEID_NUMERIC(aNamespace, aNodeID), 0);
 end;
 
@@ -495,7 +506,7 @@ begin
     bResp := UA_Client_Service_browse(FClient, bReq);
 
     if level = 0
-    then  levelStr := ''
+    then  levelStr := ' '
     else begin
       levelStr := '';
       k := 1;
@@ -504,7 +515,7 @@ begin
           levelStr := levelStr + ' ';
           inc(k);
       end;
-      levelStr := levelStr + '>'
+      levelStr := levelStr + '> '
     end;
     i := 0;
     while i < bResp.resultsSize
@@ -518,11 +529,10 @@ begin
             (ref^.nodeClass <> UA_NODECLASS_REFERENCETYPE)
         then
         begin
-          Memo1.Lines.Add( Format ('%11-s %-9d %-6d %-28s %-7s %-13s', [
-                   levelStr,
+          Memo1.Lines.Add( Format ('%-40s %-3d %-6d %-7s %-13s', [
+                   levelStr+UA_StringToStr(ref^.displayName.text),
                    ref^.nodeId.nodeId.namespaceIndex,
                    ref^.nodeId.nodeId.identifier.numeric,
-                   UA_StringToStr(ref^.displayName.text),
                    IdentifierTypeToString(ref^.nodeId.nodeId.identifierType),
                    NodeClassToString(ref^.nodeClass)])
               );
