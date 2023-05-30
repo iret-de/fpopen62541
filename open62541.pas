@@ -59,8 +59,10 @@ unit open62541;
 
 {$DEFINE ENABLE_SERVER}
 
-// Use open62541 v1.3
-{$DEFINE UA_VER1_3}
+{$ifNdef UA_VER1_2}
+   // Use open62541 v1.3 if nothing else is defined
+   {$DEFINE UA_VER1_3}
+{$endif}
 
 interface
 
