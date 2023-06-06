@@ -11,9 +11,9 @@ uses
 type
   //! Open62541 - Server Thread
   TOpen62541ServerThread = class(TThread)
-  private
-    FIsRunning : UA_Boolean;
+  private  
     FServer    : PUA_Server;
+    FIsRunning : UA_Boolean;
     FOwner     : TObject;
   public
     constructor create(owner:TObject);
@@ -69,6 +69,10 @@ end;
 { TOpen62541ServerThread }
 
 constructor TOpen62541ServerThread.create(owner: TObject);
+var
+  lConfig : PUA_ServerConfig;
+  lUsernamePasswordLoginList : PUA_UsernamePasswordLogin;
+  tmpStr : string;
 begin
   LoadOpen62541();                               // DLL Laden
   FOwner:=Owner;
@@ -77,7 +81,23 @@ begin
   LoadOpen62541PascalLog();
 
   FServer := UA_Server_new();
-  UA_ServerConfig_setDefault( UA_Server_getConfig(FServer) );
+  lConfig := UA_Server_getConfig(FServer);
+  UA_ServerConfig_setDefault( lConfig );
+
+  lUsernamePasswordLoginList := AllocMem( 3 * sizeof(UA_UsernamePasswordLogin) );
+  tmpStr := 'Frank';
+  lUsernamePasswordLoginList[0].username := _UA_STRING(tmpStr);
+  tmpStr := 'Paula';
+  lUsernamePasswordLoginList[1].username := _UA_STRING(tmpStr);
+  tmpStr := 'Anton';
+  lUsernamePasswordLoginList[2].username := _UA_STRING(tmpStr);
+  tmpStr := 'Frank123';
+  lUsernamePasswordLoginList[0].password := _UA_STRING(tmpStr);
+  tmpStr := 'Paula123';
+  lUsernamePasswordLoginList[1].password := _UA_STRING(tmpStr);
+  tmpStr := 'Anton123';
+  lUsernamePasswordLoginList[2].password := _UA_STRING(tmpStr);
+  UA_AccessControl_default(lConfig, True, nil, @(lConfig^.securityPolicies[lConfig^.securityPoliciesSize-1].policyUri), 3, lUsernamePasswordLoginList);
 end;
 
 procedure TOpen62541ServerThread.execute;
