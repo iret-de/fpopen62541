@@ -840,7 +840,7 @@ type
       policyContext: Pointer;
 
       (* The policy uri that identifies the implemented algorithms *)
-      policyUri: UA_ByteString;
+      policyUri: {$IFDEF UA_VER1_3}UA_String;{$ELSE}UA_ByteString;{$ENDIF}
 
       (* The local certificate is specific for each SecurityPolicy since it
        * depends on the used key length. *)
@@ -865,6 +865,118 @@ type
       (* Deletes the dynamic content of the policy *)
       deleteMembers: procedure(policy: PUA_SecurityPolicy);
   end;
+
+  { ------------------------------- }
+  { --- accesscontrol_default.h --- }
+  { ------------------------------- }
+  UA_UsernamePasswordLogin = record
+    username : UA_String;
+    password : UA_String;
+  end;
+  PUA_UsernamePasswordLogin = ^UA_UsernamePasswordLogin;
+
+  PUA_AccessControl = ^UA_AccessControl;
+  UA_AccessControl = record
+    context : Pointer;
+
+    clear : procedure(ac:PUA_AccessControl); cdecl;
+
+
+    (* Supported login mechanisms. The server endpoints are created from here. *)
+    userTokenPoliciesSize : size_t;
+    userTokenPolicies     : PUA_UserTokenPolicy;
+
+
+    (* Authenticate a session. The session context is attached to the session
+     * and later passed into the node-based access control callbacks. The new
+     * session is rejected if a StatusCode other than UA_STATUSCODE_GOOD is
+     * returned. *)
+    activateSession : function(server: PUA_Server;
+                                     ac: PUA_AccessControl;
+                                     const endpointDescription: PUA_EndpointDescription;
+                                     const secureChannelRemoteCertificate: PUA_ByteString;
+                                     const sessionId: PUA_NodeId;
+                                     const userIdentityToken: PUA_ExtensionObject;
+                                     sessionContext: Pointer):UA_StatusCode; cdecl;
+
+    (* Deauthenticate a session and cleanup *)
+    closeSession : procedure(server: PUA_Server; ac: PUA_AccessControl;
+                         const sessionId: PUA_NodeId; sessionContext: Pointer); cdecl;
+
+    (* Access control for all nodes*)
+    getUserRightsMask: function(server: PUA_Server; ac: PUA_AccessControl;
+                                   const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                   const nodeId: PUA_NodeId; nodeContext: Pointer):UA_UInt32;cdecl;
+
+    (* Additional access control for variable nodes *)
+    getUserAccessLevel: function(server: PUA_Server; ac: PUA_AccessControl;
+                                  const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                  const nodeId: PUA_NodeId; nodeContext: Pointer):UA_Byte;cdecl;
+
+    (* Additional access control for method nodes *)
+    getUserExecutable: function(server: PUA_Server; ac: PUA_AccessControl;
+                                    const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                    const methodId: PUA_NodeId; methodContext: Pointer):UA_Boolean; cdecl;
+
+    (* Additional access control for calling a method node in the context of a
+     * specific object *)
+    getUserExecutableOnObject: function(server: PUA_Server; ac: PUA_AccessControl;
+                                            const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                            const methodId: PUA_NodeId; methodContext: Pointer;
+                                            const objectId: PUA_NodeId; objectContext: Pointer):UA_Boolean;cdecl;
+
+    (* Allow adding a node *)
+    allowAddNode: function(server: PUA_Server; ac: UA_AccessControl;
+                               const sessionId: PUA_NodeId; sessionContext: Pointer;
+                               const item: PUA_AddNodesItem):UA_Boolean;cdecl;
+
+    (* Allow adding a reference *)
+    allowAddReference: function(server: PUA_Server; ac: PUA_AccessControl;
+                                    const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                    const item: PUA_AddReferencesItem):UA_Boolean; cdecl;
+
+    (* Allow deleting a node *)
+    allowDeleteNode: function(server: PUA_Server; ac: PUA_AccessControl;
+                                  const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                  const item: PUA_DeleteNodesItem):UA_Boolean; cdecl;
+
+    (* Allow deleting a reference *)
+    allowDeleteReference: function(server: PUA_Server; ac: PUA_AccessControl;
+                                       const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                       const item: PUA_DeleteReferencesItem):UA_Boolean; cdecl;
+
+    (* Allow browsing a node *)
+    allowBrowseNode: function(server: PUA_Server; ac: PUA_AccessControl;
+                                  const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                  const nodeId: PUA_NodeId; nodeContext: Pointer):UA_Boolean; cdecl;
+
+{$ifdef UA_ENABLE_SUBSCRIPTIONS}
+    (* Allow transfer of a subscription to another session. The Server shall
+     * validate that the Client of that Session is operating on behalf of the
+     * same user *)
+    allowTransferSubscription: function(server: PUA_Server; ac: PUA_AccessControl;
+                                            const oldSessionId: PUA_NodeId; oldSessionContext: Pointer;
+                                            const newSessionId: PUA_NodeId; newSessionContext: Pointer):UA_Boolean; cdecl;
+{$endif}
+
+{$ifdef UA_ENABLE_HISTORIZING}
+    (* Allow insert;replace;update of historical data *)
+    allowHistoryUpdateUpdateData: function(server: PUA_Server; ac: PUA_AccessControl;
+                                               const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                               const nodeId: PUA_NodeId;
+                                               performInsertReplace: UA_PerformUpdateType;
+                                               const value: PUA_DataValue):UA_Boolean; cdecl;
+
+    (* Allow delete of historical data *)
+    allowHistoryUpdateDeleteRawModified: function(server: PUA_Server; ac: pUA_AccessControl;
+                                                      const sessionId: PUA_NodeId; sessionContext: Pointer;
+                                                      const nodeId: PUA_NodeId;
+                                                      tartTimestamp: UA_DateTime;
+                                                      endTimestamp: UA_DateTime;
+                                                      isDeleteModified; Boolean):UA_Boolean; cdecl;
+{$endif}
+  end;
+
 
   { -------------------- }
   { --- plugin/pki.h --- }
@@ -1002,8 +1114,16 @@ type
   { ----------------------- }
   { --- server_config.h --- }
   { ----------------------- }
+
   UA_ServerConfig = record
       logger:UA_Logger;
+
+      {$IFDEF UA_VER1_3}
+      customData: Pointer;  (* Used to attach custom data to a server config. This can
+                             * then be retrieved e.g. in a callback that forwards a
+                             * pointer to the server. *)
+      {$ENDIF}
+
       (* Server Description:
        * The description must be internally consistent.
        * - The ApplicationUri set in the ApplicationDescription must match the
@@ -1041,6 +1161,38 @@ type
       networkLayers:PUA_ServerNetworkLayer;
       customHostname:UA_String;
 
+      {* PubSub network layer
+        #ifdef UA_ENABLE_PUBSUB
+          size_t pubsubTransportLayersSize;
+          UA_PubSubTransportLayer *pubsubTransportLayers;
+          UA_PubSubConfiguration *pubsubConfiguration;
+        #endif
+      *}
+
+      (* Available security policies *)
+      securityPoliciesSize : size_t;
+      securityPolicies     : PUA_SecurityPolicy;
+
+      {* Available endpoints *}
+      endpointsSize        : size_t;
+      endpoints            : PUA_EndpointDescription;
+
+      (**
+        *Only allow the following discovery services to be executed on a
+        * SecureChannel with SecurityPolicyNone: GetEndpointsRequest,
+        * FindServersRequest and FindServersOnNetworkRequest.
+        *
+        * Only enable this option if there is no endpoint with SecurityPolicy#None
+        * in the endpoints list. The SecurityPolicy#None must be present in the
+        * securityPolicies list. *)
+      securityPolicyNoneDiscoveryOnly : UA_Boolean;
+
+      certificateVerification         : UA_CertificateVerification;
+
+      (**
+       * See the section for :ref:`access-control
+       * handling<access-control>`. *)
+      accessControl : UA_AccessControl;
   {
     FIXME define the remaining fields
   }
@@ -1167,6 +1319,8 @@ var
   {$IFDEF ENABLE_SERVER}
   UA_Server_new: function(): PUA_Server; cdecl;
   UA_ServerConfig_setMinimalCustomBuffer: function(config: PUA_ServerConfig; portNumber: UA_UInt16; const certificate: PUA_ByteString; sendBufferSize, recvBufferSize: UA_UInt32): UA_StatusCode; cdecl;
+  UA_AccessControl_default: function(config: PUA_ServerConfig; allowAnonymous: UA_Boolean; verifyX509: PUA_CertificateVerification; const userTokenPolicyUri: PUA_ByteString; usernamePasswordLoginSize: size_t; usernamePasswordLogin: PUA_UsernamePasswordLogin): UA_StatusCode; cdecl;
+
   UA_Server_delete: procedure(server: PUA_Server); cdecl;
   UA_Server_getConfig: function(server: PUA_Server): PUA_ServerConfig; cdecl;
   UA_Server_run: function(server: PUA_Server; running: PUA_Boolean): UA_StatusCode; cdecl;
@@ -1802,6 +1956,7 @@ begin
 
     @UA_Server_new := GetProcedureAddress(open62541LibHandle,'UA_Server_new');
     @UA_ServerConfig_setMinimalCustomBuffer := GetProcedureAddress(open62541LibHandle,'UA_ServerConfig_setMinimalCustomBuffer');
+    @UA_AccessControl_default := GetProcedureAddress(open62541LibHandle,'UA_AccessControl_default');
     @UA_Server_delete := GetProcedureAddress(open62541LibHandle,'UA_Server_delete');
     @UA_Server_getConfig := GetProcedureAddress(open62541LibHandle,'UA_Server_getConfig');
     @UA_Server_run := GetProcedureAddress(open62541LibHandle,'UA_Server_run');
