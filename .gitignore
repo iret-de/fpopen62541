@@ -1,2 +1,5 @@
-
+.gitignore
+*/bin/
+*/backup/
+backup/
 *.bak
