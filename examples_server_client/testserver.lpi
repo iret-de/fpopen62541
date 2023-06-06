@@ -76,7 +76,9 @@
       </Options>
     </Linking>
     <Other>
-      <CustomOptions Value="-dUA_VER1_2"/>
+      <OtherDefines Count="1">
+        <Define0 Value="UA_VER1_2"/>
+      </OtherDefines>
     </Other>
   </CompilerOptions>
   <Debugging>
