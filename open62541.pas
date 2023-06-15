@@ -1319,6 +1319,14 @@ var
   {$IFDEF ENABLE_SERVER}
   UA_Server_new: function(): PUA_Server; cdecl;
   UA_ServerConfig_setMinimalCustomBuffer: function(config: PUA_ServerConfig; portNumber: UA_UInt16; const certificate: PUA_ByteString; sendBufferSize, recvBufferSize: UA_UInt32): UA_StatusCode; cdecl;
+  UA_ServerConfig_setDefaultWithSecurityPolicies: function(conf: PUA_ServerConfig;
+                               portNumber: UA_UInt16;
+                               const certificate: PUA_ByteString;
+                               const privateKey: PUA_ByteString;
+                               const trustList: PUA_ByteString; trustListSize: size_t;
+                               const issuerList: PUA_ByteString; issuerListSize: size_t;
+                               const revocationList: PUA_ByteString; revocationListSize: size_t):UA_StatusCode; cdecl;
+
   UA_AccessControl_default: function(config: PUA_ServerConfig; allowAnonymous: UA_Boolean; verifyX509: PUA_CertificateVerification; const userTokenPolicyUri: PUA_ByteString; usernamePasswordLoginSize: size_t; usernamePasswordLogin: PUA_UsernamePasswordLogin): UA_StatusCode; cdecl;
 
   UA_Server_delete: procedure(server: PUA_Server); cdecl;
@@ -1956,6 +1964,7 @@ begin
 
     @UA_Server_new := GetProcedureAddress(open62541LibHandle,'UA_Server_new');
     @UA_ServerConfig_setMinimalCustomBuffer := GetProcedureAddress(open62541LibHandle,'UA_ServerConfig_setMinimalCustomBuffer');
+    @UA_ServerConfig_setDefaultWithSecurityPolicies := GetProcedureAddress(open62541LibHandle, 'UA_ServerConfig_setDefaultWithSecurityPolicies');
     @UA_AccessControl_default := GetProcedureAddress(open62541LibHandle,'UA_AccessControl_default');
     @UA_Server_delete := GetProcedureAddress(open62541LibHandle,'UA_Server_delete');
     @UA_Server_getConfig := GetProcedureAddress(open62541LibHandle,'UA_Server_getConfig');
