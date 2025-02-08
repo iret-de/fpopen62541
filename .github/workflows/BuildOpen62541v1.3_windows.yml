@@ -46,7 +46,8 @@ jobs:
         cmake --build build64_debug --config Debug
         Rename-Item build64_debug/bin/Debug/open62541.dll libopen62541.dll
 
-    - uses: actions/Upload-artifact@v3
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v4
       with:
         name: v1.3 libraries windows
         path: |
@@ -58,3 +59,4 @@ jobs:
           open62541/build32_debug/bin/
           open62541/build64_release/bin/
           open62541/build64_debug/bin/
+        retention-days: 14
