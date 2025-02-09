@@ -19,7 +19,7 @@ jobs:
     - name: build 32bits release
       run: |
         cd open62541
-        cmake -A Win32 -S . -B build32_release -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=1
+        cmake -A Win32 -S . -B build32_release -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=1 -DUA_MULTITHREADING=100
         cmake --build build32_release --config Release
         Rename-Item build32_release/bin/Release/open62541.dll libopen62541.dll
         
@@ -27,14 +27,14 @@ jobs:
     - name: build 32bits debug
       run: |
         cd open62541
-        cmake -A Win32 -S . -B build32_debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=1
+        cmake -A Win32 -S . -B build32_debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=1 -DUA_MULTITHREADING=100
         cmake --build build32_debug --config Debug
         Rename-Item build32_debug/bin/Debug/open62541.dll libopen62541.dll
 
     - name: build 64bits release
       run: |
         cd open62541
-        cmake -A x64 -S . -B build64_release -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=1
+        cmake -A x64 -S . -B build64_release -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=1 -DUA_MULTITHREADING=100
         cmake --build build64_release --config Release
         Rename-Item build64_release/bin/Release/open62541.dll libopen62541.dll
 
@@ -42,14 +42,14 @@ jobs:
     - name: build 64bits debug
       run: |
         cd open62541
-        cmake -A x64 -S . -B build64_debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=1
+        cmake -A x64 -S . -B build64_debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=1 -DUA_MULTITHREADING=100
         cmake --build build64_debug --config Debug
         Rename-Item build64_debug/bin/Debug/open62541.dll libopen62541.dll
 
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: v1.3 libraries windows
+        name: open62541_1.3.x_multithreading_windows
         path: |
           #config.h to check the options used for generating the library
           open62541/build32_release/src_generated/open62541/config.h 
