@@ -12,7 +12,7 @@ jobs:
       run: |
         git clone https://github.com/open62541/open62541.git
         cd open62541
-        git checkout 1.4
+        git checkout tags/v1.4.11
       
     - name: build 32bits release
       run: |
