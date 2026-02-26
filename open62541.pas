@@ -104,6 +104,7 @@ type
 
   UA_Boolean = bytebool;PUA_Boolean = ^UA_Boolean;
   UA_Byte = Byte;       PUA_Byte = ^UA_Byte;
+  UA_SByte = AnsiChar;  PUA_SByte = ^UA_SByte;
   UA_Int16 = Smallint;  PUA_Int16 = ^UA_Int16;
   UA_UInt16 = Word;     PUA_UInt16 = ^UA_UInt16;
   UA_Int32 = integer;   PUA_Int32 = ^UA_Int32;
@@ -149,7 +150,7 @@ type
    * DateTime instead. But this is still unusual and not implemented for most
    * SDKs. Currently (2019), UTC and TAI are 37 seconds apart due to leap
    * seconds. *)
-  UA_DateTime = Int64;
+  UA_DateTime = type Int64;
   PUA_DateTime = ^UA_DateTime;
 
   UA_DateTimeStruct = record
@@ -638,6 +639,13 @@ type
       UA_ATTRIBUTEID_EXECUTABLE              = 21,
       UA_ATTRIBUTEID_USEREXECUTABLE          = 22,
       UA_ATTRIBUTEID_DATATYPEDEFINITION      = 23
+      {$ifdef UA_VER1_3}
+      ,
+      UA_ATTRIBUTEID_ROLEPERMISSIONS         = 24,
+      UA_ATTRIBUTEID_USERROLEPERMISSIONS     = 25,
+      UA_ATTRIBUTEID_ACCESSRESTRICTIONS      = 26,
+      UA_ATTRIBUTEID_ACCESSLEVELEX           = 27
+      {$endif}
   );
 
   (**
@@ -1110,6 +1118,10 @@ type
                                const objectId: PUA_NodeId; objectContext:pointer;
                                inputSize: SIZE_T; const input:PUA_Variant;
                                outputSize: SIZE_T; output:PUA_Variant): UA_StatusCode; cdecl;
+  UA_Server_DataChangeNotificationCallback = procedure (server : PUA_Server;
+       monitoredItemId : UA_UInt32; monitoredItemContext : Pointer;
+       const nodeID : PUA_NodeId;nodeContext : Pointer; attributeId : UA_UInt32;
+       const value : PUA_DataValue); cdecl;
 
   { ----------------------- }
   { --- server_config.h --- }
@@ -1266,6 +1278,7 @@ var
   UA_ObjectTypeAttributes_default: UA_ObjectTypeAttributes;
   UA_ReferenceTypeAttributes_default: UA_ReferenceTypeAttributes;
   UA_DataTypeAttributes_default: UA_DataTypeAttributes;
+  UA_VariableTypeAttributes_default: UA_VariableTypeAttributes;
 
   UA_Client_new: function (): PUA_Client; cdecl;
   UA_Client_newWithConfig: function(const config: PUA_ClientConfig): PUA_Client; cdecl;
@@ -1293,6 +1306,9 @@ var
   UA_DateTime_toStruct: function(t: UA_DateTime): UA_DateTimeStruct; cdecl;
   UA_DateTime_fromStruct: function(ts: UA_DateTimeStruct): UA_DateTime; cdecl;
   UA_findDataType: function(typeId: PUA_NodeId): PUA_DataType; cdecl;
+  UA_DateTime_now: function(): UA_DateTime; cdecl;
+  UA_DateTime_localTimeUtcOffset: function(): UA_Int64; cdecl;
+  UA_DateTime_nowMonotonic: function(): UA_DateTime; cdecl;
 
   UA_new: function(const _type: PUA_DataType): Pointer; cdecl;
   UA_copy: function(src,dst: Pointer; const _type: PUA_DataType): UA_StatusCode; cdecl;
@@ -1365,6 +1381,10 @@ var
                             const outputArgumentsRequestedNewNodeId:UA_NodeId;
                             outputArgumentsOutNewNodeId:PUA_NodeId;
                             nodeContext: pointer; outNewNodeId:PUA_NodeId): UA_StatusCode; cdecl;
+  UA_Server_createDataChangeMonitoredItem : function (server : PUA_Server; timestampsToReturn : UA_TimestampsToReturn;
+                                                      const item : UA_MonitoredItemCreateRequest;
+                                                      monitoredItemContext : Pointer;
+                                                      callback : UA_Server_DataChangeNotificationCallback) : UA_MonitoredItemCreateResult; cdecl;
   UA_MethodAttributes_default:UA_MethodAttributes;
   {$ENDIF}
 
@@ -1687,22 +1707,31 @@ function UA_Variant_getFloat(var v: UA_Variant): single;
 function UA_Variant_getDouble(var v: UA_Variant): double;
 function UA_Variant_getBoolean(var v: UA_Variant): bytebool;
 function UA_Variant_getByte(var v: UA_Variant): Byte;
+function UA_Variant_getChar(var v: UA_Variant): Char;
 function UA_Variant_getByteString(var v: UA_Variant; aMaxLength : integer): AnsiString;
 function UA_Variant_getSmallint(var v: UA_Variant): Smallint;
+function UA_Variant_getUInt16(var v: UA_Variant): Word;
 function UA_Variant_getInteger(var v: UA_Variant): Integer;
+function UA_Variant_getUInt32(var v: UA_Variant): Cardinal;
 function UA_Variant_getInt64(var v: UA_Variant): Int64;
+function UA_Variant_getUInt64(var v: UA_Variant): Int64;
+function UA_Variant_getDateTime(var v: UA_Variant): UA_DateTime;
+function UA_Variant_getDateTimeStruct(var v: UA_Variant): UA_DateTimeStruct;
 function UA_Variant_getString(var v: UA_Variant): AnsiString; overload;
 function UA_Variant_getString(var v: UA_Variant; arrayIndex: DWord): AnsiString; overload;
 procedure UA_Variant_setBoolean(out v: UA_Variant; b: bytebool);
 procedure UA_Variant_setFloat(out v: UA_Variant; f: single);
 procedure UA_Variant_setDouble(out v: UA_Variant; d: double);
 procedure UA_Variant_setByte(out v: UA_Variant; i: Byte);
+procedure UA_Variant_setChar(out v: UA_Variant; i: Char);
 procedure UA_Variant_setSmallint(out v: UA_Variant; i: Smallint);
 procedure UA_Variant_setUInt16(out v: UA_Variant; i: UInt16);
 procedure UA_Variant_setInteger(out v: UA_Variant; i: Integer);
 procedure UA_Variant_setUInt32(out v: UA_Variant; i: UInt32);
 procedure UA_Variant_setInt64(out v: UA_Variant; i: Int64);
 procedure UA_Variant_setUInt64(out v: UA_Variant; i: UInt64);
+procedure UA_Variant_setDateTime(out v: UA_Variant; i: UA_DateTime);
+procedure UA_Variant_setDateTimeStruct(out v: UA_Variant; i: UA_DateTimeStruct);
 procedure UA_Variant_setString(out v: UA_Variant; const s: AnsiString);
 
 (* The following functions are shorthand for creating NodeIds. *)
@@ -1771,9 +1800,12 @@ function UA_Client_Service_translateBrowsePathsToNodeIds(client : PUA_Client; co
 { --- client_highlevel.h --- }
 { -------------------------- }
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: UA_Variant): UA_StatusCode; overload;
+function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Boolean): UA_StatusCode; overload;
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Byte): UA_StatusCode; overload;
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Smallint): UA_StatusCode; overload;
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Longint): UA_StatusCode; overload;
+function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: int64): UA_StatusCode; overload;
+function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: UA_Float): UA_StatusCode; overload;
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: AnsiString): UA_StatusCode; overload;
 function UA_Client_readDataTypeAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outDataType: UA_NodeId): UA_StatusCode;
 function UA_Client_readValueRankAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValueRank: UA_Int32): UA_StatusCode;
@@ -1782,9 +1814,12 @@ function UA_Client_readDisplayNameAttribute(client: PUA_Client; const nodeId: UA
 function UA_Client_readDescriptionAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outDescription: UA_LocalizedText): UA_StatusCode;
 
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; {$IFDEF FPC}constref{$ELSE}const{$ENDIF} newValue: UA_Variant): UA_StatusCode; overload;
+function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: Boolean): UA_StatusCode; overload;
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: Byte): UA_StatusCode; overload;
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: Smallint): UA_StatusCode; overload;
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: Longint): UA_StatusCode; overload;
+function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: int64): UA_StatusCode; overload;
+function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: UA_Float): UA_StatusCode; overload;
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: AnsiString): UA_StatusCode; overload;
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValues: array of AnsiString): UA_StatusCode; overload;
 function UA_Client_writeDescriptionAttribute(client: PUA_Client; const nodeId: UA_NodeId; {$IFDEF FPC}constref{$ELSE}const{$ENDIF} newDescription: UA_LocalizedText): UA_StatusCode;
@@ -1854,7 +1889,7 @@ function UA_Server_addDataTypeNode(server:PUA_Server;
                           const attr:UA_DataTypeAttributes;
                           nodeContext:pointer; outNewNodeId:PUA_NodeId):UA_StatusCode;
 function UA_Server_readValue(server: PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Variant): UA_StatusCode; overload;
-function UA_Server_writeValue(server: PUA_Server; const nodeId: UA_NodeId; const value: UA_Variant): UA_StatusCode;
+function UA_Server_writeValue(server: PUA_Server; const nodeId: UA_NodeId; const value: UA_Variant): UA_StatusCode; overload;
 function UA_Server_addMethodNode(server: PUA_Server; const requestedNewNodeId:UA_NodeId;
                             const parentNodeId:UA_NodeId;
                             const referenceTypeId:UA_NodeId;
@@ -1868,7 +1903,22 @@ function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out o
 function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: Boolean): UA_StatusCode; overload;
 function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: Smallint): UA_StatusCode; overload;
 function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: Longint): UA_StatusCode; overload;
+function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Int64): UA_StatusCode; overload;
+function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Float): UA_StatusCode; overload;
+function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Double): UA_StatusCode; overload;
 function UA_Server_readValue(server : PUA_Server; const nodeId: UA_NodeId; out outValue: AnsiString): UA_StatusCode; overload;
+function UA_Server_readArrayDimensions(server : PUA_Server; const nodeId : UA_NodeId; out outArrayDimensions : PUA_Variant) : UA_StatusCode;
+function UA_Server_readValue_DateTime(server : PUA_Server; const nodeId: UA_NodeId; out outValue: UA_DateTime): UA_StatusCode;
+function UA_Server_readDisplayName(server: PUA_Server; const nodeId: UA_NodeId; out outValue: AnsiString): UA_StatusCode;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Boolean): UA_StatusCode; overload;
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Byte): UA_StatusCode; overload;
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Smallint): UA_StatusCode; overload;
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Longint): UA_StatusCode; overload;
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: UA_Int64): UA_StatusCode; overload;
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: UA_Float): UA_StatusCode; overload;
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Ansistring): UA_StatusCode; overload;
+function UA_Server_writeValue_DateTime(server : PUA_Server; const nodeId: UA_NodeId; const Value: UA_DateTime): UA_StatusCode;
 
 {$ENDIF}
 
@@ -1915,6 +1965,7 @@ begin
     UA_ObjectTypeAttributes_default := PUA_ObjectTypeAttributes(GetProcedureAddress(open62541LibHandle,'UA_ObjectTypeAttributes_default'))^;
     UA_ReferenceTypeAttributes_default := PUA_ReferenceTypeAttributes(GetProcedureAddress(open62541LibHandle,'UA_ReferenceTypeAttributes_default'))^;
     UA_DataTypeAttributes_default := PUA_DataTypeAttributes(GetProcedureAddress(open62541LibHandle,'UA_DataTypeAttributes_default'))^;
+    UA_VariableTypeAttributes_default := PUA_VariableTypeAttributes(GetProcedureAddress(open62541LibHandle,'UA_VariableTypeAttributes_default'))^;
 
     @UA_Client_new := GetProcedureAddress(open62541LibHandle,'UA_Client_new');
     @UA_Client_newWithConfig := GetProcedureAddress(open62541LibHandle,'UA_Client_newWithConfig');
@@ -1942,6 +1993,9 @@ begin
     @UA_DateTime_toStruct := GetProcedureAddress(open62541LibHandle,'UA_DateTime_toStruct');
     @UA_DateTime_fromStruct := GetProcedureAddress(open62541LibHandle,'UA_DateTime_fromStruct');
     @UA_findDataType := GetProcedureAddress(open62541LibHandle,'UA_findDataType');
+    @UA_DateTime_now := GetProcedureAddress(open62541LibHandle,'UA_DateTime_now');
+    @UA_DateTime_localTimeUtcOffset := GetProcedureAddress(open62541LibHandle,'UA_DateTime_localTimeUtcOffset');
+    @UA_DateTime_nowMonotonic := GetProcedureAddress(open62541LibHandle,'UA_DateTime_nowMonotonic');
 
     @UA_new := GetProcedureAddress(open62541LibHandle,'UA_new');
     @UA_copy := GetProcedureAddress(open62541LibHandle,'UA_copy');
@@ -1980,6 +2034,7 @@ begin
     @__UA_Server_write := GetProcedureAddress(open62541LibHandle,'__UA_Server_write');
     @UA_Server_addNamespace := GetProcedureAddress(open62541LibHandle,'UA_Server_addNamespace');
     @UA_Server_addMethodNodeEx := GetProcedureAddress(open62541LibHandle,'UA_Server_addMethodNodeEx');
+    @UA_Server_createDataChangeMonitoredItem := GetProcedureAddress(open62541LibHandle,'UA_Server_createDataChangeMonitoredItem');
   end;
 end;
 
@@ -2309,6 +2364,12 @@ function UA_Variant_getByte(var v: UA_Variant): Byte;
 begin
   Result := PUA_Byte(v.data)^;
 end;
+
+function UA_Variant_getChar(var v: UA_Variant): Char;
+begin
+  Result := PUA_SByte(v.data)^;
+end;
+
 //! Get Variant as byte-String:
 //!   * maximum of "aMaxLength" characters
 //!   * #0 terminates string
@@ -2329,13 +2390,33 @@ function UA_Variant_getSmallint(var v: UA_Variant): Smallint;
 begin
   Result := PUA_Int16(v.data)^;
 end;
+function UA_Variant_getUInt16(var v: UA_Variant): Word;
+begin
+  Result := PUA_UInt16(v.data)^;
+end;
 function UA_Variant_getInteger(var v: UA_Variant): Integer;
 begin
   Result := PUA_Int32(v.data)^;
 end;
+function UA_Variant_getUInt32(var v: UA_Variant): Cardinal;
+begin
+  Result := PUA_UInt32(v.data)^;
+end;
 function UA_Variant_getInt64(var v: UA_Variant): Int64;
 begin
   Result := PUA_Int64(v.data)^;
+end;
+function UA_Variant_getUInt64(var v: UA_Variant): Int64;
+begin
+  Result := PUA_UInt64(v.data)^;
+end;
+function UA_Variant_getDateTime(var v: UA_Variant): UA_DateTime;
+begin
+  Result := UA_Variant_getInt64(v);
+end;
+function UA_Variant_getDateTimeStruct(var v: UA_Variant): UA_DateTimeStruct;
+begin
+  Result := UA_DateTime_toStruct(UA_Variant_getDateTime(v));
 end;
 function UA_Variant_getString(var v: UA_Variant): AnsiString;
 begin
@@ -2365,6 +2446,10 @@ procedure UA_Variant_setByte(out v: UA_Variant; i: Byte);
 begin
   UA_Variant_setScalarCopy(@v, @i, @UA_TYPES[UA_TYPES_BYTE]);
 end;
+procedure UA_Variant_setChar(out v: UA_Variant; i: Char);
+begin
+  UA_Variant_setScalarCopy(@v, @i, @UA_TYPES[UA_TYPES_SBYTE]);
+end;
 procedure UA_Variant_setSmallint(out v: UA_Variant; i: Smallint);
 begin
   UA_Variant_setScalarCopy(@v, @i, @UA_TYPES[UA_TYPES_INT16]);
@@ -2388,6 +2473,14 @@ end;
 procedure UA_Variant_setUInt64(out v: UA_Variant; i: UInt64);
 begin
   UA_Variant_setScalarCopy(@v, @i, @UA_TYPES[UA_TYPES_UINT64]);
+end;
+procedure UA_Variant_setDateTime(out v: UA_Variant; i: UA_DateTime);
+begin
+  UA_Variant_setScalarCopy(@v, @i, @UA_TYPES[UA_TYPES_DATETIME]);
+end;
+procedure UA_Variant_setDateTimeStruct(out v: UA_Variant; i: UA_DateTimeStruct);
+begin
+  UA_Variant_setDateTime(v, UA_DateTime_fromStruct(i));
 end;
 procedure UA_Variant_setString(out v: UA_Variant; const s: AnsiString);
 var uas: UA_STRING;
@@ -2543,6 +2636,19 @@ begin
   UA_String_clear(item.indexRange);
 end;
 
+function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Boolean): UA_StatusCode;
+var value: UA_Variant;
+begin
+  Result := __UA_Client_readAttribute(client, @nodeId, UA_ATTRIBUTEID_VALUE, @value, @UA_TYPES[UA_TYPES_BOOLEAN]);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_BOOLEAN]) then
+      outValue:= PUA_Boolean(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
+  end;
+end;
+
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Byte): UA_StatusCode;
 var value: UA_Variant;
 begin
@@ -2552,8 +2658,8 @@ begin
       outValue:= PUA_Byte(value.data)^
     else
       Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
   end;
-  UA_Variant_clear(value);
 end;
 
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Smallint): UA_StatusCode;
@@ -2565,8 +2671,8 @@ begin
       outValue:= PUA_Int16(value.data)^
     else
       Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
   end;
-  UA_Variant_clear(value);
 end;
 
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: Longint): UA_StatusCode; overload;
@@ -2579,8 +2685,36 @@ begin
       outValue:= PUA_Int32(value.data)^
     else
       Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
   end;
-  UA_Variant_clear(value);
+end;
+
+function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: int64): UA_StatusCode;
+var value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Client_readAttribute(client, @nodeId, UA_ATTRIBUTEID_VALUE, @value, @UA_TYPES[UA_TYPES_VARIANT]);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_INT64]) then
+      outValue:= PUA_Int32(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
+  end;
+end;
+
+function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: UA_Float): UA_StatusCode;
+var value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Client_readAttribute(client, @nodeId, UA_ATTRIBUTEID_VALUE, @value, @UA_TYPES[UA_TYPES_VARIANT]);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_FLOAT]) then
+      outValue:= PUA_Float(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
+  end;
 end;
 
 function UA_Client_readValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outValue: AnsiString): UA_StatusCode; overload;
@@ -2592,8 +2726,8 @@ begin
       SetString(outValue, PAnsiChar(PUA_String(value.data)^.data), PUA_String(value.data)^.length)
     else
       Result := UA_STATUSCODE_BADTYPEMISMATCH;
+    UA_Variant_clear(value);
   end;
-  UA_Variant_clear(value);
 end;
 
 function UA_Client_readDataTypeAttribute(client: PUA_Client; const nodeId: UA_NodeId; out outDataType: UA_NodeId): UA_StatusCode;
@@ -2627,6 +2761,13 @@ begin
   Result := __UA_Client_writeAttribute(client, @nodeId, UA_ATTRIBUTEID_VALUE, @newValue, @UA_TYPES[UA_TYPES_VARIANT]);
 end;
 
+function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: Boolean): UA_StatusCode;
+var uav: UA_Variant;
+begin
+  UA_Variant_setScalar(@uav, @newValue, @UA_TYPES[UA_TYPES_BOOLEAN]);
+  Result := UA_Client_writeValueAttribute(client, nodeId, uav);
+end;
+
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: Byte): UA_StatusCode;
 var uav: UA_Variant;
 begin
@@ -2646,6 +2787,21 @@ begin
   UA_Variant_setScalar(@uav, @newValue, @UA_TYPES[UA_TYPES_INT32]);
   Result := UA_Client_writeValueAttribute(client, nodeId, uav);
 end;
+
+function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: int64): UA_StatusCode;
+var uav: UA_Variant;
+begin
+  UA_Variant_setScalar(@uav, @newValue, @UA_TYPES[UA_TYPES_INT64]);
+  Result := UA_Client_writeValueAttribute(client, nodeId, uav);
+end;
+
+function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: UA_Float): UA_StatusCode;
+var uav: UA_Variant;
+begin
+  UA_Variant_setScalar(@uav, @newValue, @UA_TYPES[UA_TYPES_FLOAT]);
+  Result := UA_Client_writeValueAttribute(client, nodeId, uav);
+end;
+
 function UA_Client_writeValueAttribute(client: PUA_Client; const nodeId: UA_NodeId; const newValue: AnsiString): UA_StatusCode;
 var uav: UA_Variant; uas: UA_String;
 begin
@@ -2893,6 +3049,47 @@ begin
   end;
   UA_Variant_clear(value);
 end;
+function UA_Server_readValue(server: PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Int64): UA_StatusCode;
+var value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_VALUE, @Value);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_INT64]) then
+      outValue:= PUA_Int64(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+  end;
+  UA_Variant_clear(value);
+end;
+
+function UA_Server_readValue(server: PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Float): UA_StatusCode;
+var value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_VALUE, @Value);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_FLOAT]) then
+      outValue:= PUA_Float(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+  end;
+  UA_Variant_clear(value);
+end;
+
+function UA_Server_readValue(server: PUA_Server; const nodeId: UA_NodeId; out outValue: UA_Double): UA_StatusCode;
+var value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_VALUE, @Value);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_DOUBLE]) then
+      outValue:= PUA_Double(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+  end;
+  UA_Variant_clear(value);
+end;
 
 function UA_Server_readValue(server: PUA_Server; const nodeId: UA_NodeId; out outValue: AnsiString): UA_StatusCode;
 var value: UA_Variant;
@@ -2906,6 +3103,108 @@ begin
       Result := UA_STATUSCODE_BADTYPEMISMATCH;
   end;
   UA_Variant_clear(value);
+end;
+
+function UA_Server_readArrayDimensions(server : PUA_Server; const nodeId : UA_NodeId; out outArrayDimensions : PUA_Variant) : UA_StatusCode;
+begin
+  outArrayDimensions := nil;
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_ARRAYDIMENSIONS, outArrayDimensions);
+end;
+  
+function UA_Server_readValue_DateTime(server: PUA_Server; const nodeId: UA_NodeId; out outValue: UA_DateTime): UA_StatusCode;
+var value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_VALUE, @Value);
+  if Result = UA_STATUSCODE_GOOD then begin
+    if UA_Variant_hasScalarType(@value, @UA_TYPES[UA_TYPES_DATETIME]) then
+      outValue:= PUA_DateTime(value.data)^
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+  end;
+  UA_Variant_clear(value);
+end;
+
+function UA_Server_readDisplayName(server: PUA_Server; const nodeId: UA_NodeId; out outValue: AnsiString): UA_StatusCode;
+var
+  value: UA_LocalizedText;
+begin
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_DISPLAYNAME, @Value);
+  if Result = UA_STATUSCODE_GOOD then begin
+    outValue := UA_LocalizedTextToStr(value);
+  end;
+end;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Boolean): UA_StatusCode; overload;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setBoolean(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Byte): UA_StatusCode; overload;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setByte(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Smallint): UA_StatusCode; overload;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setSmallint(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Longint): UA_StatusCode; overload;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setUInt32(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: UA_Int64): UA_StatusCode; overload;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setUInt64(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue(server: PUA_Server; const nodeId: UA_NodeId; const Value: UA_Float): UA_StatusCode;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setFloat(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue(server : PUA_Server; const nodeId: UA_NodeId; const Value: Ansistring): UA_StatusCode; overload;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setString(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
+end;
+
+function UA_Server_writeValue_DateTime(server: PUA_Server; const nodeId: UA_NodeId; const Value: UA_DateTime): UA_StatusCode;
+var
+  v: UA_Variant;
+begin
+  UA_Variant_setDateTime(v, Value);
+  Result := UA_Server_writeValue(server, nodeId, v);
+  UA_Variant_clear(v);
 end;
 
 function UA_Server_writeValue(server: PUA_Server; const nodeId: UA_NodeId; const value: UA_Variant): UA_StatusCode;

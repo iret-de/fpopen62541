@@ -20,9 +20,47 @@ uses
   Classes, SysUtils,
   open62541;
 
+  //! Return True if the statuscode is not an error code
+  function UA_StatusCode_IsGood(const aStatus: UA_StatusCode): Boolean;
+
+  //! Return an explanation for the Open6251-Statuscode
   function UA_Explain_StatusCode (aStatus: UA_StatusCode) : string;
 
+  //! Append the content of a UA_String-Array ("aValue") to the stringlist "aSL"
+  procedure UA_StringArrayToStringlist (var aValue : UA_Variant; const aSL : TStrings);
+
+  //! Copy the stringlist "aSL" as an UA_String-Array to the UA_Variant "aValue"
+  function StringlistToUA_VariantArray(const aSL : TStrings; var aValue : UA_Variant) : UA_StatusCode;
+
+  //! Determine the length of the array behing the "nodeID"
+  //! \retval UA_STATUSCODE_GOOD - everything is fine, "outvalue" is valid
+  //! \retval UA_STATUSCODE_BADTYPEMISMATCH - The node does not seem to be an array
+  function UA_Server_getArrayLength (server: PUA_Server; const nodeId: UA_NodeId; out outValue: integer): UA_StatusCode;
+
+  //! Read the content of "nodeID" as an UA_String-Array and copy it to "aSL"
+  //! \retval UA_STATUSCODE_GOOD - everything is fine, "outvalue" is valid
+  //! \retval UA_STATUSCODE_BADTYPEMISMATCH - The node does not seem to be an array
+  function UA_Server_readArray_UA_String(server: PUA_Server; const nodeId: UA_NodeId; const aSL : TStrings; out aArrayLen : integer): UA_StatusCode;
+
+  //! Convert a TDateTime value to an UA_DateTime
+  //!
+  function DateTime_To_UA_DataTime (const aValue: TDateTime) : UA_DateTime;
+
+  //! Convert a UA_DateTime value to DateTime
+  //!
+  function UA_DateTime_To_DateTime (const aValue: UA_DateTime) : TDateTime;
+
 implementation
+
+uses
+  DateUtils;
+
+//! Return True if the statuscode is not an error code
+//!
+function UA_StatusCode_IsGood(const aStatus: UA_StatusCode): Boolean;
+begin
+  Result := (aStatus and $80000000) = 0;
+end;
 
 //! Return a textual description of the "aStatus"
 //!
@@ -272,6 +310,99 @@ begin
     Result := 'UNKNOWN STATUSCODE';
   end;
   Result := 'Statuscode=' + IntToHex (aStatus) + ' -> ' + Result;
+end;
+
+procedure UA_StringArrayToStringlist(var aValue : UA_Variant; const aSL : TStrings);
+var
+  i : integer;
+begin
+  i := 0;
+  while i < aValue.arrayLength
+  do begin
+    aSL.Add(UA_Variant_getString(aValue, i));
+    inc (i);
+  end;
+end;
+
+// Nicht elegant, aber es funzt....
+//
+function StringlistToUA_VariantArray(const aSL : TStrings; var aValue : UA_Variant) : UA_StatusCode;
+var
+  myData    : array [0..9] of UA_String;
+  myStrings : array [0..9] of AnsiString;
+  i         : integer;
+begin
+  UA_Variant_init(aValue);
+  i := 0;
+  while i < aSL.Count
+  do begin
+//    myData[i] := _UA_STRING_ALLOC(aSL[i]);
+    myData[i].length := length (aSL[i]);
+    myStrings[i] := aSL[i];
+    myData[i].data := @myStrings[i][1];
+    inc (i);
+  end;
+  aValue.arrayDimensionsSize := 1;
+  Result := UA_Variant_setArrayCopy (@aValue, @mydata, aSL.Count, @UA_TYPES[UA_TYPES_STRING]);
+end;
+
+function UA_Server_getArrayLength (server: PUA_Server; const nodeId: UA_NodeId; out outValue: integer): UA_StatusCode;
+var
+  value: UA_Variant;
+begin
+  UA_Variant_init(value);
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_VALUE, @Value);
+  if Result = UA_STATUSCODE_GOOD then begin
+    outValue := value.arrayLength;
+    if outValue = 0
+      then Result := UA_STATUSCODE_BADTYPEMISMATCH;
+  end;
+  UA_Variant_clear(value);
+end;
+
+function UA_Server_readArray_UA_String(server: PUA_Server; const nodeId: UA_NodeId; const aSL : TStrings; out aArrayLen : integer): UA_StatusCode;
+var
+  value: UA_Variant;
+begin
+  aArrayLen := -1;
+  UA_Variant_init(value);
+  Result := __UA_Server_read(server, @nodeId, UA_ATTRIBUTEID_VALUE, @Value);
+  if Result = UA_STATUSCODE_GOOD
+  then begin
+    if UA_Variant_hasArrayType(@value, @UA_TYPES[UA_TYPES_STRING])
+    then begin
+      aArrayLen := value.arrayLength;
+      if assigned (aSL) then UA_StringArrayToStringlist(value, aSL);
+    end
+    else
+      Result := UA_STATUSCODE_BADTYPEMISMATCH;
+  end;
+  UA_Variant_clear(value);
+end;
+
+function DateTime_To_UA_DataTime (const aValue: TDateTime) : UA_DateTime;
+var
+  lUADateTimeStruct : UA_DateTimeStruct;
+begin
+  lUADateTimeStruct.nanoSec  := 0;
+  lUADateTimeStruct.microSec := 0;
+  lUADateTimeStruct.milliSec := MilliSecondOf(aValue);
+  lUADateTimeStruct.sec      := SecondOf(aValue);
+  lUADateTimeStruct.min      := MinuteOf(aValue);
+  lUADateTimeStruct.hour     := HourOf(aValue);
+  lUADateTimeStruct.day      := DayOf(aValue);
+  lUADateTimeStruct.month    := MonthOf(aValue);
+  lUADateTimeStruct.year     := YearOf(aValue);
+
+  Result := UA_DateTime_fromStruct (lUADateTimeStruct);
+end;
+
+function UA_DateTime_To_DateTime(const aValue: UA_DateTime): TDateTime;
+var
+  lUADateTimeStruct : UA_DateTimeStruct;
+begin
+  lUADateTimeStruct := UA_DateTime_toStruct(aValue);
+  Result := EncodeDateTime(lUADateTimeStruct.year, lUADateTimeStruct.month, lUADateTimeStruct.day, lUADateTimeStruct.hour, lUADateTimeStruct.min, lUADateTimeStruct.sec, lUADateTimeStruct.milliSec);
 end;
 
 end.
