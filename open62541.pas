@@ -469,6 +469,9 @@ type
       fill : UA_Byte;
       fill1 : UA_Byte;
       fill2 : UA_Byte;
+    {$ifdef CPU64}
+      fill3 : UA_UInt32;
+    {$endif}
 
        {namespaceZero: UA_Boolean:1;}  (* The type of the member is defined in
                                         namespace zero. In this implementation,
@@ -478,6 +481,7 @@ type
        {isArray: UA_Boolean:1;}        (* The member is an array *)
        {isOptional: UA_Boolean:1;}     (* The member is an optional field *)
    end;
+   PUA_DataTypeMember = ^UA_DataTypeMember;
    {$ELSE}
    UA_DataTypeMember = record
        memberTypeIndex: UA_UInt16;   (* Index of the member in the array of data
@@ -551,7 +555,12 @@ type
                                          * pointers that need to be freed *)
        overlayable : 0..1;              (* The type has the identical memory layout
                                          * in memory and on the binary stream. *)
+     {$ifdef CPU64}
+       membersSize : UA_UInt32;         (* How many members does the type have? *)
+       filler : UA_Byte;
+     {$else}
        membersSize : UA_Byte;           (* How many members does the type have? *)
+     {$endif}
        members: ^UA_DataTypeMember;
    end;
    {$ELSE}
@@ -1001,6 +1010,7 @@ type
   { --- client_config.h --- }
   { ----------------------- }
   UA_ClientConfig = record
+  {$ifdef UA_VER1_2}
       (* Basic client configuration *)
       clientContext: Pointer; (* User-defined data attached to the client *)
       logger: UA_Logger;   (* Logger used by the client *)
@@ -1045,6 +1055,18 @@ type
       localConnectionConfig: UA_ConnectionConfig;
       connectivityCheckInterval: UA_UInt32 ;    (* Connectivity check interval in ms.
                                                  * 0 = background task disabled *)
+
+      {**
+       * Custom Data Types
+       * ~~~~~~~~~~~~~~~~~
+       * The following is a linked list of arrays with custom data types. All data
+       * types that are accessible from here are automatically considered for the
+       * decoding of received messages. Custom data types are not cleaned up
+       * together with the configuration. So it is possible to allocate them on
+       * ROM.
+       *
+       * See the section on :ref:`generic-types`. Examples for working with custom
+       * data types are provided in ``/examples/custom_datatype/``. *}
       customDataTypes: ^UA_DataTypeArray; (* Custom DataTypes. Attention!
                                            * Custom datatypes are not cleaned
                                            * up together with the
@@ -1089,7 +1111,122 @@ type
        * for the subscription.. *)
        subscriptionInactivityCallback : procedure (client:PUA_Client; subscriptionId:UA_UInt32; subContext:pointer);cdecl;
     {$ENDIF}
+  {$else}
+      (* Basic client configuration *)
+      clientContext: Pointer; (* User-defined data attached to the client *)
+      logger: UA_Logger;   (* Logger used by the client *)
+      timeout: UA_UInt32;  (* Response timeout in ms *)
+
+      (* The description must be internally consistent.
+       * - The ApplicationUri set in the ApplicationDescription must match the
+       *   URI set in the server certificate *)
+      clientDescription: UA_ApplicationDescription;
+
+      (* Basic connection configuration *)
+      userIdentityToken: UA_ExtensionObject; (* Configured User-Identity Token *)
+      securityMode: UA_MessageSecurityMode;  (* None, Sign, SignAndEncrypt. The
+                                              * default is invalid. This indicates
+                                              * the client to select any matching
+                                              * endpoint. *)
+      securityPolicyUri: UA_String; (* SecurityPolicy for the SecureChannel. An
+                                     * empty string indicates the client to select
+                                     * any matching SecurityPolicy. *)
+
+      (* Advanced connection configuration
+       *
+       * If either endpoint or userTokenPolicy has been set (at least one non-zero
+       * byte in either structure), then the selected Endpoint and UserTokenPolicy
+       * overwrite the settings in the basic connection configuration. The
+       * userTokenPolicy array in the EndpointDescription is ignored. The selected
+       * userTokenPolicy is set in the dedicated configuration field.
+       *
+       * If the advanced configuration is not set, the client will write to it the
+       * selected Endpoint and UserTokenPolicy during GetEndpoints.
+       *
+       * The information in the advanced configuration is used during reconnect
+       * when the SecureChannel was broken. *)
+      endpoint: UA_EndpointDescription;
+      userTokenPolicy: UA_UserTokenPolicy;
+
+      {**
+       * If the EndpointDescription has not been defined, the ApplicationURI
+       * constrains the servers considered in the FindServers service and the
+       * Endpoints considered in the GetEndpoints service.
+       *
+       * If empty the applicationURI is not used to filter.
+       *}
+      applicationUri: UA_String;
+
+      {**
+       * Custom Data Types
+       * ~~~~~~~~~~~~~~~~~
+       * The following is a linked list of arrays with custom data types. All data
+       * types that are accessible from here are automatically considered for the
+       * decoding of received messages. Custom data types are not cleaned up
+       * together with the configuration. So it is possible to allocate them on
+       * ROM.
+       *
+       * See the section on :ref:`generic-types`. Examples for working with custom
+       * data types are provided in ``/examples/custom_datatype/``. *}
+      customDataTypes: ^UA_DataTypeArray; (* Custom DataTypes. Attention!
+                                           * Custom datatypes are not cleaned
+                                           * up together with the
+                                           * configuration. So it is possible
+                                           * to allocate them on ROM. *)
+
+      (* Advanced client configuration *)
+
+      secureChannelLifeTime: UA_UInt32; (* Lifetime in ms (then the channel needs
+                                           to be renewed) *)
+      requestedSessionTimeout: UA_UInt32; (* Session timeout in ms *)
+      localConnectionConfig: UA_ConnectionConfig;
+      connectivityCheckInterval: UA_UInt32 ;    (* Connectivity check interval in ms.
+                                                 * 0 = background task disabled *)
+
+
+      (* Available SecurityPolicies *)
+      securityPoliciesSize: size_t;
+      securityPolicies: ^UA_SecurityPolicy;
+
+      (* Certificate Verification Plugin *)
+      certificateVerification: UA_CertificateVerification;
+
+      (* Callbacks for async connection handshakes *)
+      initConnectionFunc: UA_ConnectClientConnection;
+      pollConnectionFunc: function(client:PUA_Client; context:pointer; timeout: UA_UInt32):UA_StatusCode; cdecl;
+
+      (* Callback for state changes. The client state is differentated into the
+       * SecureChannel state and the Session state. The connectStatus is set if
+       * the client connection (including reconnects) has failed and the client
+       * has to "give up". If the connectStatus is not set, the client still has
+       * hope to connect or recover. *)
+      stateCallback : procedure (client:PUA_Client;
+                                 channelState: UA_SecureChannelState;
+                                 sessionState: UA_SessionState;
+                                 connectStatus: UA_StatusCode); cdecl;
+
+      (* When connectivityCheckInterval is greater than 0, every
+       * connectivityCheckInterval (in ms), a async read request is performed on
+       * the server. inactivityCallback is called when the client receive no
+       * response for this read request The connection can be closed, this in an
+       * attempt to recreate a healthy connection. *)
+       inactivityCallback : procedure (client:PUA_Client);cdecl;
+
+    {$IFDEF UA_ENABLE_SUBSCRIPTIONS}
+      (* Number of PublishResponse queued up in the server *)
+      outStandingPublishRequests : UA_UInt16;
+
+      (* If the client does not receive a PublishResponse after the defined delay
+       * of ``(sub->publishingInterval * sub->maxKeepAliveCount) +
+       * client->config.timeout)``, then subscriptionInactivityCallback is called
+       * for the subscription.. *)
+       subscriptionInactivityCallback : procedure (client:PUA_Client; subscriptionId:UA_UInt32; subContext:pointer);cdecl;
+    {$ENDIF}
+
+    sessionLocaleIds: ^UA_LocaleId;
+    sessionLocaleIdsSize: size_t;
   end;
+  {$endif}
   PUA_ClientConfig = ^UA_ClientConfig;
 
   {$IFDEF UA_ENABLE_SUBSCRIPTIONS}
